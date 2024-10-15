@@ -1,0 +1,15 @@
+torch
+torchvision
+tqdm
+matplotlib
+timm
+numpy
+kornia
+wandb
+monai
+scikit-learn
+termcolor
+pytorch_lightning
+hydra-core
+pytorch-lightning
+git+https://github.com/radoss-org/radstract.git

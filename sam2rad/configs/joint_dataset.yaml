@@ -1,0 +1,50 @@
+# Datasets
+sonance:
+  root: /home/wahd/datasets/SonanceFull # path to train images/labels
+  image_size: 1024
+  split: 0.7 # training split
+  seed: 42
+  batch_size: 4 
+  num_workers: 4
+  num_classes: 4 # Number of foreground classes (excluding background) 
+  num_tokens: 16 
+  label_to_class_id: 
+    0: 0
+    1: 1
+    2: 2
+    5: 3
+    6: 4
+
+
+3dus_chop:
+  root: /home/amcarth1/shared/study-hip-3dus-chop/mppm
+  image_size: 1024
+  split: 0.01 # training split
+  seed: 42
+  batch_size: 1
+  num_workers: 4
+  num_classes: 3
+  num_tokens: 10 
+
+shoulder:
+  root: /home/wahd/datasets/Ultrasound/ShoulderUS
+  image_size: 256
+  split: 0.3 # training split
+  seed: 42
+  batch_size: 8 
+  num_workers: 8 
+  num_classes: 1
+  num_tokens: 8 
+
+hip:
+  root: /home/wahd/datasets/Ultrasound/HipUltrasound # path to train images/labels
+  image_size: 1024
+  split: 0.01 # training split
+  seed: 42
+  batch_size: 4 
+  num_workers: 4
+  num_classes: 1 # Number of foreground classes (excluding background) 
+  num_tokens: 16 
+  label_to_class_id: 
+    0: 0
+    255: 1
