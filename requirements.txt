@@ -11,5 +11,3 @@ scikit-learn
 termcolor
 pytorch_lightning
 hydra-core
-pytorch-lightning
-git+https://github.com/radoss-org/radstract.git

@@ -1,53 +1,44 @@
 import argparse
 import logging
 import math
-import os
-import random
 import sys
-from functools import lru_cache
-from typing import List, Tuple
+from functools import partial
+from typing import Dict, List, Tuple
 
-import cv2
 import matplotlib.pyplot as plt
 import numpy as np
+import pytorch_lightning as pl
 import termcolor
+import torch
+import torch.nn.functional as F
 import torch.utils
 import torchvision.ops as ops
 import yaml
+from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
+from pytorch_lightning.loggers import WandbLogger
 from torchmetrics import Dice
 from torchmetrics.classification import MulticlassJaccardIndex as IoU
 
-from sam2rad.blob.main.misc import AverageMeter, DotDict
-
-# fmt: off
-sys.path.insert(0, os.path.abspath('sam2rad/models'))
-print(sys.path)
-# fmt: on
-from functools import partial
-from typing import Dict
-
-import pytorch_lightning as pl
-import torch
-import torch.nn.functional as F
-from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
-
-from sam2rad.datasets import DATASETS, get_dataloaders
-from sam2rad.losses import CompositeLoss, dice_loss, focal_loss
-from sam2rad.models.sam2rad.build_model import build_model as build_sam2rad
-from sam2rad.models.samrad.build_model import build_model as build_samrad
+from sam2rad import (
+    DATASETS,
+    AverageMeter,
+    CompositeLoss,
+    DotDict,
+    build_sam2rad,
+    build_samrad,
+    convert_to_semantic,
+    dice_loss,
+    focal_loss,
+    get_dataloaders,
+    overlay_contours,
+)
 
 logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
 
-
-# Pytorch verbose error messages
-# torch.autograd.set_detect_anomaly(True)
 torch.set_float32_matmul_precision("high")
 
 parser = argparse.ArgumentParser(description="Train a segmentation model")
-parser.add_argument("--model_config", type=str, help="Path to model config file")
-parser.add_argument("--dataset_config", type=str, help="Path to dataset config file")
-parser.add_argument("--trainer_config", type=str, help="Path to trainer config file")
+parser.add_argument("--config", type=str, help="Path to model config file")
 
 
 class SavePredictionsCallback(pl.Callback):
@@ -73,40 +64,20 @@ class SavePredictionsCallback(pl.Callback):
             trainer, pl_module, outputs, batch, batch_idx
         )
 
-    @staticmethod
-    @lru_cache(maxsize=None)
-    def get_random_color(cls: int):
-        return tuple(random.randint(0, 255) for _ in range(3))
-
-    def overlay_contours(self, img: np.array, mask: np.array):
-        unique_classes = np.unique(mask)
-
-        for cls in unique_classes:
-            if cls == 0:  # Assuming 0 is the background class
-                continue
-
-            binary_mask = (mask == cls).astype(np.uint8)
-            contours, _ = cv2.findContours(
-                binary_mask,
-                cv2.RETR_EXTERNAL,
-                cv2.CHAIN_APPROX_SIMPLE,
-            )
-            color = self.get_random_color(cls)
-            cv2.drawContours(img, contours, -1, color, 2)
-
-        return img
-
     def on_validation_epoch_end(self, trainer, pl_module):
         outputs = self.val_outputs
         pred = torch.cat([o["pred_masks"] for o in outputs], dim=0)
         gt = torch.cat([o["target_masks"] for o in outputs], dim=0)
         images = torch.cat([o["images"] for o in outputs], dim=0)
         fig, axes = plt.subplots(pred.size(0), 2, figsize=(2 * 4, pred.size(0) * 4))
+        if pred.size(0) == 1:
+            axes = axes[None, ...]
+
         for i, (p, g, img) in enumerate(zip(pred, gt, images)):
-            img_gt = self.overlay_contours(
+            img_gt = overlay_contours(
                 img.cpu().numpy().astype(np.uint8), g.cpu().numpy().astype(np.uint8)
             )
-            img_pred = self.overlay_contours(
+            img_pred = overlay_contours(
                 img.cpu().numpy().astype(np.uint8), p.cpu().numpy().astype(np.uint8)
             )
             axes[i, 0].imshow(img_gt)
@@ -129,12 +100,14 @@ class SavePredictionsCallback(pl.Callback):
             images = torch.cat([o["images"] for o in outputs], dim=0)
 
             fig, axes = plt.subplots(pred.size(0), 2, figsize=(2 * 4, pred.size(0) * 4))
+            if pred.size(0) == 1:
+                axes = axes[None, ...]
 
             for i, (p, g, img) in enumerate(zip(pred, gt, images)):
-                img_gt = self.overlay_contours(
+                img_gt = overlay_contours(
                     img.cpu().numpy().astype(np.uint8), g.cpu().numpy().astype(np.uint8)
                 )
-                img_pred = self.overlay_contours(
+                img_pred = overlay_contours(
                     img.cpu().numpy().astype(np.uint8), p.cpu().numpy().astype(np.uint8)
                 )
                 axes[i, 0].imshow(img_gt)
@@ -150,45 +123,6 @@ class SavePredictionsCallback(pl.Callback):
             self.train_outputs.clear()
 
         return super().on_train_epoch_end(trainer, pl_module)
-
-
-class ConcatDataloaders:
-    """
-    Fetches batch from multiple dataloaders in an alternating fashion.
-    """
-
-    def __init__(self, *dataloaders):
-        self.dataloaders = dataloaders
-
-    def get_next_batch(self, dataloaders, every_iters=5):
-        """
-        Fetches the next batch from one of the dataloaders.
-        """
-        _dataloader_iters = [iter(dl) for dl in dataloaders]
-        total_iters = sum(len(dl) for dl in self.dataloaders)
-
-        dl_index = 0
-        for step in range(total_iters):
-            # Select datasets in an alternating fashion, such as 0, 1, 2, 0, 1, 2, 0, ...
-            if (step + 1) % every_iters == 0:
-                dl_index = (dl_index + 1) % len(dataloaders)  # 0, 1 % len = 2
-
-            try:
-                batch = next(_dataloader_iters[dl_index])
-            except StopIteration:
-                _dataloader_iters[dl_index] = iter(
-                    self.dataloaders[dl_index]
-                )  # Reset the iterator for the current dataloader
-                batch = next(_dataloader_iters[dl_index])
-
-            yield {"data": batch, "dataloader_idx": dl_index}
-
-    def __len__(self):
-        return sum(len(dl) for dl in self.dataloaders)
-
-    def __iter__(self):
-        for batch in self.get_next_batch(self.dataloaders):
-            yield batch
 
 
 def build_model(config):
@@ -219,10 +153,9 @@ class SegmentationModule(torch.nn.Module):
         self.dataset_names = list(prompts.keys())
         self.learnable_prompts = torch.nn.ParameterDict(prompts)
 
-        # TODO: fix this. It breaks if there are multiple datasets because the number of classes is different for each dataset.
-        self.num_classes = self.learnable_prompts[self.dataset_names[0]].size(0)
+        self.num_classes = self.learnable_prompts[config.dataset.name].size(0)
 
-    def forward(self, batch, dataset_index, inference=False):
+    def forward(self, batch, dataset_index=0, inference=False):
         """Get the learnable prompts for the dataset and make predictions"""
         imgs = batch["images"]
         prompts = self.learnable_prompts[self.dataset_names[dataset_index]].to(
@@ -310,14 +243,13 @@ class Learner(pl.LightningModule):
         return batch
 
     def training_step(self, batch, batch_idx):
-        dataloader_idx = batch["dataloader_idx"]
-        b, c, h, w = batch["data"]["masks"].shape
-        batch = self.reshape_inputs(batch["data"])
+        b, c, h, w = batch["masks"].shape
+        batch = self.reshape_inputs(batch)
         gt = batch["masks"].float()  # (B*C, 1, H, W)
-        outputs = self.model(batch, dataloader_idx)
+        outputs = self.model(batch)
         pred = outputs["pred"]
         loss_seg = self.loss_fn(pred, gt)  # (B,)
-        # Make prediction for non-empty masks only
+        # Compute loss for non-empty masks only
         is_non_empty = (gt.sum(dim=(1, 2, 3)) > 10).float()
         loss_seg = (loss_seg * is_non_empty).sum() / is_non_empty.sum()
         # Bounding box regression loss
@@ -360,8 +292,8 @@ class Learner(pl.LightningModule):
         # Compute metrics
         _pred = pred.clone().detach()
         _pred[object_score_logits < 0] = -1
-        pred_semantic = self.to_semantic(_pred.detach().view(b, c, h, w))
-        gt_semantic = self.to_semantic(gt.view(b, c, h, w))
+        pred_semantic = convert_to_semantic(_pred.detach().view(b, c, h, w))
+        gt_semantic = convert_to_semantic(gt.view(b, c, h, w))
 
         self.train_dice_metric.update(self.dice(pred_semantic, gt_semantic), b)
         self.train_iou_metric.update(self.iou(pred_semantic, gt_semantic), b)
@@ -399,34 +331,7 @@ class Learner(pl.LightningModule):
         img = img * self.pixel_std.to(img.device) + self.pixel_mean.to(img.device)
         return (img * 255).type(torch.uint8).permute(0, 2, 3, 1).cpu()
 
-    @staticmethod
-    def to_semantic(mask: torch.Tensor):
-        """
-        Convert a multi-channel mask to a semantic segmentation mask.
-
-        Args:
-        mask: (B, C, H, W) - A PyTorch tensor where B is batch size, C is number of classes,
-                            H is height, and W is width.
-
-        Returns:
-        sem_mask: (B, H, W) - A PyTorch tensor representing the semantic segmentation mask.
-        """
-
-        # Get the class with the highest probability for each pixel (adding 1 to account for ignored background)
-        sem_mask = mask.argmax(dim=1) + 1
-
-        # Create a foreground mask
-        fg = (mask > 0).any(dim=1).float()
-
-        # Apply the foreground mask to sem_mask
-        sem_mask = sem_mask * fg
-
-        return sem_mask.long()
-
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
-        if "data" in batch:
-            batch = batch["data"]
-
         b, c, h, w = batch["masks"].shape
         batch = self.reshape_inputs(batch)
         gt = batch["masks"].float()  # (B, C, H, W)
@@ -435,8 +340,7 @@ class Learner(pl.LightningModule):
         loss_seg = self.loss_fn(pred, gt)  # (B,)
         # train on non-empty masks only
         is_non_empty = (gt.sum(dim=(1, 2, 3)) > 1).float()
-        # loss_seg = (loss_seg * is_non_empty).sum() / is_non_empty.sum()
-        loss_seg = loss_seg.mean()
+        loss_seg = (loss_seg * is_non_empty).sum() / is_non_empty.sum()
         object_score_logits = outputs["object_score_logits"].view(-1)
 
         loss_object = F.binary_cross_entropy_with_logits(
@@ -444,8 +348,8 @@ class Learner(pl.LightningModule):
         )
 
         pred[object_score_logits < 0] = -1
-        pred_semantic = self.to_semantic(pred.detach().view(b, c, h, w))
-        gt_semantic = self.to_semantic(gt.view(b, c, h, w))
+        pred_semantic = convert_to_semantic(pred.detach().view(b, c, h, w))
+        gt_semantic = convert_to_semantic(gt.view(b, c, h, w))
 
         self.val_dice_metric.update(self.dice(pred_semantic, gt_semantic), b)
         self.val_iou_metric.update(self.iou(pred_semantic, gt_semantic), b)
@@ -479,7 +383,7 @@ class Learner(pl.LightningModule):
             weight_decay=0.1,
         )
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-            optimizer, T_max=trainer_config.max_epochs, eta_min=1e-5
+            optimizer, T_max=config.training.max_epochs, eta_min=1e-5
         )
 
         return {
@@ -491,153 +395,83 @@ class Learner(pl.LightningModule):
         }
 
 
-class DataModule(pl.LightningDataModule):
-    """
-    This will automatically handle multi-GPU training and distributed data loading.
-    """
-
-    def __init__(self, train_loader, *val_loader):
-        super().__init__()
-        self.train_loader = train_loader
-        self.val_loader = val_loader
-
-    def train_dataloader(self):
-        return self.train_loader
-
-    def val_dataloader(self):
-        return self.val_loader
-
-    def test_dataloader(self):
-        return self.val_loader
-
-    def transfer_batch_to_device(self, batch, device, dataloader_idx):
-        # Training data
-        if "data" in batch:
-            for key, value in batch["data"].items():
-                if isinstance(value, torch.Tensor):
-                    batch["data"][key] = value.to(device)
-
-        else:
-            # Validation data
-            for key, value in batch.items():
-                if isinstance(value, torch.Tensor):
-                    batch[key] = value.to(device)
-
-        return batch
-
-
 if __name__ == "__main__":
     args = parser.parse_args()
-    # Get dataset object
-    with open(args.dataset_config) as f:
-        dataset_config = yaml.safe_load(f)
-        dataset_config = DotDict.from_dict(dataset_config)
-
-    # build model
-    with open(args.model_config) as f:
-        model_config = yaml.safe_load(f)
-        model_config = DotDict.from_dict(model_config)
-
-    # Hyperparameter configs
-    with open(args.trainer_config) as f:
-        trainer_config = yaml.safe_load(f)
-        trainer_config = DotDict.from_dict(trainer_config)
+    with open(args.config, encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+        config = DotDict(config)
 
     # Register a custom dataset or use a default one, e.g., dataset_obj = DATASETS["default_segmentation"]
-    default_dataset = DATASETS["default_segmentation"]
+    dataset_obj = DATASETS[config.dataset.name]
 
-    # Get dataloaders
-    learnable_prompts = {}
-    trn_dls, val_dls = [], []
-    for dataset in trainer_config["datasets"]:
-        # Register a custom dataset or use a default one, e.g., dataset_obj = DATASETS["default_segmentation"]
-        dataset_obj = (
-            DATASETS[dataset] if dataset in DATASETS else default_dataset
-        )  # if the dataset is not registered, use the default dataset
-        trn_ds, val_ds = dataset_obj.from_path(dataset_config.get(dataset))
-        val_ds = torch.utils.data.Subset(val_ds, range(0, 100))
+    trn_ds, val_ds = dataset_obj.from_path(config.dataset)
+    # Debug: faster validation
+    val_ds = torch.utils.data.Subset(val_ds, range(0, 100))
 
-        # Get dataloaders
-        trn_dl = get_dataloaders(dataset_config[dataset], trn_ds)
-        val_dl = get_dataloaders(dataset_config[dataset], val_ds)
-
-        # Initialize learnable prompts for each dataset
-        class_tokens = torch.nn.Parameter(
-            torch.randn(
-                dataset_config[dataset]["num_classes"],
-                dataset_config[dataset]["num_tokens"],
-                256,
-            )
-            / math.sqrt(256)
-        )
-
-        learnable_prompts[dataset] = class_tokens
-
-        trn_dls.append(trn_dl)
-        val_dls.append(val_dl)
-
-    # Concatenate dataloaders
-    concat_dl = ConcatDataloaders(*trn_dls)
+    trn_dl = get_dataloaders(config.dataset, trn_ds)
+    val_dl = get_dataloaders(config.dataset, val_ds)
 
     print(f"Train dataset size: {len(trn_dl.dataset)}")
     print(f"Validation dataset size: {len(val_dl.dataset)}")
-    datamodule = DataModule(concat_dl, *val_dls)
+
+    # Initialize learnable prompts for each dataset
+    class_tokens = torch.nn.Parameter(
+        torch.randn(
+            config.dataset.num_classes,
+            config.dataset.num_tokens,
+            256,
+        )
+        / math.sqrt(256)
+    )
+
     # loss functions
     loss_fn = CompositeLoss(
         [
-            partial(dice_loss, reduction="none"),
+            # partial(dice_loss, reduction="none"),
             partial(focal_loss, reduction="none", alpha=0.7, gamma=3),
         ],
-        weights=torch.tensor([1.0, 10.0]),
+        weights=torch.tensor([1.0]),
     )
 
-    model = SegmentationModule(model_config, learnable_prompts)
+    model = SegmentationModule(config, {config.dataset.name: class_tokens})
     print(model)
     termcolor.colored("Trainable parameters:", "red")
     for name, param in model.named_parameters():
         if param.requires_grad:
             print(termcolor.colored(f"{name} | {param.size()}", "red"))
 
-    learner = Learner(model, loss_fn=loss_fn, lr=trainer_config["lr"])
-
-    # Log model if validation accuracy increases
-    wandb_logger = WandbLogger(log_model=False, project="Sam2Med", config=vars(args))
-
-    lr_monitor = LearningRateMonitor(logging_interval="step")
-    # Callbacks
+    learner = Learner(model, loss_fn=loss_fn, lr=1e-4)
+    lr_monitor = LearningRateMonitor(logging_interval="epoch")
+    wandb_logger = WandbLogger(
+        project=config.get("wandb_project_name", "hfunet"),
+        log_model=False,
+        save_dir="./logs",
+    )
+    wandb_logger.watch(model, log_graph=False)
     checkpoint_callback = ModelCheckpoint(
-        monitor="val_dice",  # TODO: the validation dice should be averaged across all datasets. https://github.com/Lightning-AI/pytorch-lightning/discussions/5793
+        monitor="val_dice",
         dirpath="checkpoints"
-        if trainer_config.get("save_path") is None
-        else trainer_config.get("save_path"),
+        if config.get("save_path") is None
+        else config.get("save_path"),
         save_last=True,
         filename="model_{epoch:02d}-{val_dice:.2f}",
         save_top_k=3,
         mode="max",
     )
 
-    # Watch gradients
-    # wandb_logger.watch(model, log="gradients", log_freq=100, log_graph=False)
-
     trainer = pl.Trainer(
-        max_epochs=trainer_config["max_epochs"],
+        max_epochs=config.training.max_epochs,
         enable_progress_bar=True,
-        gradient_clip_val=10,
-        check_val_every_n_epoch=10,
+        check_val_every_n_epoch=20,
         log_every_n_steps=10,
-        # strategy="ddp_find_unused_parameters_true",  #
         logger=wandb_logger,
-        callbacks=[
-            checkpoint_callback,
-            lr_monitor,
-            SavePredictionsCallback(),
-        ],
-        # profiler="simple",
+        callbacks=[checkpoint_callback, lr_monitor, SavePredictionsCallback()],
         accelerator="gpu",  # run on all available GPUs
     )
 
     trainer.fit(
         learner,
-        datamodule=datamodule,
-        ckpt_path=trainer_config.get("resume"),
+        train_dataloaders=trn_dl,
+        val_dataloaders=val_dl,
+        ckpt_path=config.training.get("resume"),
     )

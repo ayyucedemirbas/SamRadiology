@@ -3,22 +3,21 @@ import warnings
 
 import torch
 import yaml
-
-from sam2rad.blob.main.misc import DotDict
-from sam2rad.decoders.build_decoder import *
-from sam2rad.decoders.registry import MASK_DECODER_REGISTRY
-from sam2rad.encoders.build_encoder import *
-from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
-from sam2rad.models.sam2.modeling.memory_attention import (
+from sam2.modeling.memory_attention import (
     MemoryAttention,
     MemoryAttentionLayer,
 )
-from sam2rad.models.sam2.modeling.memory_encoder import (
+from sam2.modeling.memory_encoder import (
     CXBlock,
     Fuser,
     MaskDownSampler,
     MemoryEncoder,
 )
+
+from sam2rad.blob.misc import DotDict
+from sam2rad.decoders.build_decoder import build_decoder_mlp
+from sam2rad.decoders.registry import MASK_DECODER_REGISTRY
+from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
 from sam2rad.models.sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2rad.models.sam2.modeling.sam.prompt_encoder import PromptEncoder
 from sam2rad.models.sam2.modeling.sam.transformer import RoPEAttention
@@ -314,7 +313,7 @@ def build_model(args) -> Model:
 
     prompt_sampler = PromptSampler(
         prompt_encoder=prompt_encoder,
-        prompt_learner=PROMPT_PREDICTORS[args.prompt_predictor](
+        prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
             prompt_encoder=prompt_encoder,
             embedding_dim=prompt_encoder.embed_dim,
             num_heads=1,

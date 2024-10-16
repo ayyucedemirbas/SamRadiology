@@ -10,7 +10,7 @@ from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
 from sam2rad.models.sam.modeling import PromptEncoder
 
 from .model import Model
-from .prompt_learning import TwoWayCrossAttention as LightweightAttention
+from .prompt_learning import PROMPT_PREDICTORS
 from .prompt_sampler import PromptSampler
 
 
@@ -71,9 +71,9 @@ def build_model(args):
 
     prompt_sampler = PromptSampler(
         prompt_encoder=prompt_encoder,
-        prompt_learner=LightweightAttention(
+        prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
             prompt_encoder=prompt_encoder,
-            embedding_dim=prompt_embed_dim,
+            embedding_dim=prompt_encoder.embed_dim,
             num_heads=1,
             mlp_dim=256,
         ),

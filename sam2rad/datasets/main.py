@@ -2,8 +2,6 @@
 # It accepts a list of images, ground truth files and a config file and returns a Dataset object that can be used by a dataloader.
 
 import random
-import re
-from collections import defaultdict
 from functools import partial
 from pathlib import Path, PosixPath
 from typing import Dict, List, Tuple
@@ -17,6 +15,7 @@ from sklearn.model_selection import train_test_split
 from torch.utils.data import DataLoader, Dataset
 from torchvision import io
 
+from .registry import register_dataset
 from .utils import ResizeLongestSide, pad
 
 
@@ -135,7 +134,10 @@ class BaseDataset(torch.utils.data.Dataset):
 
     @staticmethod
     def read_image(path):
-        return io.read_image(path)
+        img = io.read_image(path)
+        if img.size(0) == 1:
+            img = img.repeat(3, 1, 1)
+        return img
 
     @staticmethod
     def read_mask(path):
@@ -309,62 +311,72 @@ class BaseDataset(torch.utils.data.Dataset):
     def get_corresponding_image_name(mask_file: str):
         return mask_file.replace("gts", "imgs")
 
+    @staticmethod
+    def split_train_test(file_names, test_size, seed=None):
+        if seed is not None:
+            np.random.seed(seed)
+        return train_test_split(file_names, test_size=test_size)
+
     @classmethod
     def from_path(cls, config, mode="Train"):
         path = Path(config["root"])
         mask_file_names = [f for f in path.glob(f"{mode}/gts/*")]
+        mask_file_names.sort()
 
-        trn_mask_file_names, val_mask_file_names = train_test_split(
-            mask_file_names, test_size=1 - config["split"]
-        )
+        if mode == "Train":
+            trn_mask_file_names, val_mask_file_names = cls.split_train_test(
+                mask_file_names, test_size=1 - config.split, seed=config.get("seed", 0)
+            )
 
-        trn_img_file_names = [
-            cls.get_corresponding_image_name(str(f)) for f in trn_mask_file_names
+            trn_img_file_names = [
+                cls.get_corresponding_image_name(str(f)) for f in trn_mask_file_names
+            ]
+
+            val_img_file_names = [
+                cls.get_corresponding_image_name(str(f)) for f in val_mask_file_names
+            ]
+
+            return (
+                cls(trn_img_file_names, trn_mask_file_names, config, mode="Train"),
+                cls(val_img_file_names, val_mask_file_names, config, mode="Val"),
+            )
+
+        # Test
+        img_file_names = [
+            cls.get_corresponding_image_name(str(f)) for f in mask_file_names
         ]
 
-        val_img_file_names = [
-            cls.get_corresponding_image_name(str(f)) for f in val_mask_file_names
-        ]
-
-        return (
-            cls(trn_img_file_names, trn_mask_file_names, config, mode="Train"),
-            cls(val_img_file_names, val_mask_file_names, config, mode="Val"),
-        )
+        return cls(img_file_names, mask_file_names, config, mode="Test")
 
 
+@register_dataset("default_test_dataset")
 class TestDataset(BaseDataset):
     """
     Returns images without any augmentation.
     """
 
-    def __init__(self, img_files, gt_files, config):
-        super().__init__(img_files, gt_files, config, mode="Test")
-
     def __getitem__(self, index):
-        img = io.read_image(self.img_files[index]).float() / 255.0
-        gt = io.read_image(self.gt_files[index])
-        gt = self.remap_labels(gt).float()
+        img_orig = self.read_image(self.img_files[index])
+        img = img_orig.float() / 255.0
+        gt = self.read_mask(self.gt_files[index])
+        gt = self.remap_labels(gt).long()
         img = (img - self.mean) / self.std
         img = self.resize(img[None], order=1)
         input_size = img.shape[2:]
         img = self.pad(img)[0]
+        boxes = self.masks_to_boxes(gt)
 
-        return img, gt, input_size, self.img_files[index]
+        if gt.ndim == 3:
+            gt = gt.squeeze(0)
 
-
-def group_files_by_patient_id(files: List[PosixPath]) -> Dict[int, List[PosixPath]]:
-    """
-    Extracts the patient IDs from the filenames.
-    """
-    # .../1323DP_MX_25.png -> 1323
-    pattern = re.compile(r"(\d+)[a-zA-Z]*")
-    id2filename = defaultdict(list)
-    for filename in files:
-        match = pattern.match(filename.stem)
-        if match:
-            id2filename[int(match.group(1))].append(filename)
-
-    return id2filename
+        return (
+            img_orig.permute(1, 2, 0),
+            img,
+            gt,
+            input_size,
+            boxes,
+            self.img_files[index],
+        )
 
 
 def get_dataloaders(args: dict, dataset: Dataset) -> DataLoader:
@@ -385,5 +397,5 @@ def get_dataloaders(args: dict, dataset: Dataset) -> DataLoader:
         batch_size=args.get("batch_size", 4),
         shuffle=True,
         num_workers=args.get("num_workers", 4),
-        # pin_memory=True,
+        drop_last=True,
     )

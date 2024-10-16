@@ -11,3 +11,4 @@ datasets:
   # - wrist
 
 save_path: "experiments/sam2_small_hierarchical/3dus_chop"
+resume: "experiments/sam2_small_hierarchical/3dus_chop/last.ckpt"
