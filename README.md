@@ -48,6 +48,8 @@ Sam2Rad supports various image encoders and mask decoders, allowing flexibility 
 -	vit_tiny
 -	All versions of Sam2 image encoder with or without adapters
 
+All supported image encoders are available in the [sam2rad/encoders/build_encoder.py](sam2rad/encoders/build_encoder.py).
+
 **Supported Mask Decoders**
 
 -	sam_mask_decoder
@@ -55,6 +57,7 @@ Sam2Rad supports various image encoders and mask decoders, allowing flexibility 
 -	All versions of Sam2 mask decoder
 
 
+All supported mask decoders are available in the [sam2rad/decoders/build_decoder.py](sam2rad/decoders/build_decoder.py).
 
 ## Training
 Prepare a configuration file for training. Here is an example configuration file for training on the ACDC dataset:
