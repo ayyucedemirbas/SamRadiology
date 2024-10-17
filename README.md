@@ -1,66 +1,129 @@
-# Sam2rad: A Segmentation Model for Medical Images with Learnable Prompts
+# Sam2Rad: A Segmentation Model for Medical Images with Learnable Prompts
 
-# Model
-![Sam2Rad Architecture](paper/Sam2Rad.png)
+Requirements
 
-
-## Quickstart
-
-**NOTE**: This will download a small dataset for demonstration purposes.
+1.	Clone the Repository
 
 ```bash
 git clone https://github.com/nidus-lab/sam2rad.git
 cd sam2rad
+```
+
+2.	Set Up a Virtual Environment
+It’s recommended to use a virtual environment to manage dependencies.
+
+```bash
 python3 -m venv .venv
 source .venv/bin/activate
+```
+
+3.	Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-Download the weights [here](https://github.com/facebookresearch/segment-anything-2?tab=readme-ov-file#download-checkpoints) and place in the `weights` directory.
 
-Start Training
+4.	Download Pre-trained Weights
+Download the pre-trained weights from the official SAM repository and place them in the weights directory:
+
+
+## Quickstart
+Download Sample Dataset:
+- Download the preprocessed data from [ACDC dataset](https://drive.google.com/drive/folders/14WIOWTF1WWwMaHV7UVo5rjWujpUxGetJ?usp=sharing).
+- Extract the data to `./datasets/ACDCPreprocessed`.
+
+
+## Models
+
+Sam2Rad supports various image encoders and mask decoders, allowing flexibility in model architecture.
+
+**Supported Image Encoders**
+-	sam_vit_b_adapter
+-	sam_vit_l_adapter
+-	sam_vit_h_adapter
+-	sam_vit_b
+-	sam_vit_l
+-	sam_vit_h
+-	vit_tiny
+-	All versions of Sam2 image encoder with or without adapters
+
+**Supported Mask Decoders**
+
+-	sam_mask_decoder
+-	lora_mask_decoder
+-	All versions of Sam2 mask decoder
+
+
+
+## Training
+Prepare a configuration file for training. Here is an example configuration file for training on the ACDC dataset:
+
+```yaml
+image_size: 1024
+image_encoder: "sam2_tiny_hiera_adapter"
+mask_decoder: "sam2_lora_mask_decoder"
+sam_checkpoint: "weights/sam2_hiera_tiny.pt"
+wandb_project_name: "ACDC"
+
+dataset:
+  name: acdc
+  root: /path/to/your/dataset
+  image_size: 1024
+  split: 0.0526 # 0.0263 # training split
+  seed: 42
+  batch_size: 4
+  num_workers: 4
+  num_classes: 3
+  num_tokens: 10
+
+training:
+  max_epochs: 200
+  save_path: checkpoints/ACDC
+
+inference:
+  name: acdc_test
+  root: /path/to/your/test_data
+  checkpoint_path: /path/to/your/checkpoint 
+```
+
 
 ```bash
 source .venv/bin/activate
-CUDA_VISIBLE_DEVICES=0 python train.py
+CUDA_VISIBLE_DEVICES=0 python train.py --config /path/to/your/config.yaml
+
 ```
+Replace `/path/to/your/config.yaml` with the actual path to your configuration file.
 
-Start Inference
+## Evaluation
 
+Ensure your configuration file points to the correct checkpoint and data paths:
+
+```yaml
+inference:
+  model_checkpoint: checkpoints/your_model_checkpoint
+  input_images: /path/to/your/test_images
+  output_dir: /path/to/save/segmentation_results
+  image_size: 1024
+```
+Run the evaluation script:
 ```bash
-source .venv/bin/activate
-python ./examples/inference.py
+python sam2rad/evaluation/test_bounding_box.py --config /path/to/your/config.yaml
+python sam2rad/evaluation/test_prompt_learner.py --config /path/to/your/config.yaml
 ```
-# Models
 
-**Currenty supported image encoders**
-- sam_vit_b_adapter
-- sam_vit_l_adapter
-- sam_vit_h_adapter
-- sam_vit_b
-- sam_vit_l
-- sam_vit_h
-- vit_tiny
-- All versions of Sam2 image encoder with/without adapters
+## Citation
 
-**Currenty supported decoders**
-- sam_mask_decoder
-- lora_mask_decoder
-- All versions of Sam2 mask decoder
-
-
-# Citation
-If you use this in your research, please consider citing the following paper:
-
+If you use Sam2Rad in your research, please consider citing our paper:
 
 ```bibtex
 @article{wahd2024sam2radsegmentationmodelmedical,
-      title={Sam2Rad: A Segmentation Model for Medical Images with Learnable Prompts}, 
-      author={Assefa Seyoum Wahd and Banafshe Felfeliyan and Yuyue Zhou and Shrimanti Ghosh and Adam McArthur and Jiechen Zhang and Jacob L. Jaremko and Abhilash Hareendranathan},
-      year={2024},
-      eprint={2409.06821},
-      archivePrefix={arXiv},
-      primaryClass={cs.CV},
-      url={https://arxiv.org/abs/2409.06821}, 
+  title={Sam2Rad: A Segmentation Model for Medical Images with Learnable Prompts},
+  author={Assefa Seyoum Wahd and Banafshe Felfeliyan and Yuyue Zhou and Shrimanti Ghosh and Adam McArthur and Jiechen Zhang and Jacob L. Jaremko and Abhilash Hareendranathan},
+  year={2024},
+  eprint={2409.06821},
+  archivePrefix={arXiv},
+  primaryClass={cs.CV},
+  url={https://arxiv.org/abs/2409.06821},
 }
-
+```

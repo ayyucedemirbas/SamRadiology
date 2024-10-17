@@ -22,12 +22,10 @@ from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from sam2rad import (
     DATASETS,
     AverageMeter,
-    CompositeLoss,
     DotDict,
     build_sam2rad,
     build_samrad,
     convert_to_semantic,
-    dice_loss,
     focal_loss,
     get_dataloaders,
     overlay_contours,
@@ -251,7 +249,7 @@ class Learner(pl.LightningModule):
         loss_seg = self.loss_fn(pred, gt)  # (B,)
         # Compute loss for non-empty masks only
         is_non_empty = (gt.sum(dim=(1, 2, 3)) > 10).float()
-        loss_seg = (loss_seg * is_non_empty).sum() / is_non_empty.sum()
+        loss_seg = (loss_seg * is_non_empty).sum() / (is_non_empty.sum() + 1e-6)
         # Bounding box regression loss
         loss_box = 0.0
         if outputs["pred_boxes"] is not None:
@@ -283,9 +281,9 @@ class Learner(pl.LightningModule):
             )
 
             interim_mask_loss = interim_mask_loss.mean(dim=(1, 2, 3))
-            interim_mask_loss = (
-                interim_mask_loss * is_non_empty
-            ).sum() / is_non_empty.sum()
+            interim_mask_loss = (interim_mask_loss * is_non_empty).sum() / (
+                is_non_empty.sum() + 1e-6
+            )
 
         train_loss = loss_seg + loss_object + loss_box + 100 * interim_mask_loss
 
@@ -340,9 +338,8 @@ class Learner(pl.LightningModule):
         loss_seg = self.loss_fn(pred, gt)  # (B,)
         # train on non-empty masks only
         is_non_empty = (gt.sum(dim=(1, 2, 3)) > 1).float()
-        loss_seg = (loss_seg * is_non_empty).sum() / is_non_empty.sum()
+        loss_seg = (loss_seg * is_non_empty).sum() / (is_non_empty.sum() + 1e-6)
         object_score_logits = outputs["object_score_logits"].view(-1)
-
         loss_object = F.binary_cross_entropy_with_logits(
             object_score_logits, is_non_empty
         )
@@ -424,14 +421,7 @@ if __name__ == "__main__":
         / math.sqrt(256)
     )
 
-    # loss functions
-    loss_fn = CompositeLoss(
-        [
-            # partial(dice_loss, reduction="none"),
-            partial(focal_loss, reduction="none", alpha=0.7, gamma=3),
-        ],
-        weights=torch.tensor([1.0]),
-    )
+    loss_fn = partial(focal_loss, reduction="none", alpha=0.7, gamma=3)
 
     model = SegmentationModule(config, {config.dataset.name: class_tokens})
     print(model)

@@ -4,8 +4,9 @@ import warnings
 import kornia as K
 import torch
 import torch.nn.functional as F
+from torchvision import io
 
-from . import BaseDataset
+from . import BaseDataset, TestDataset
 from .registry import register_dataset
 
 warnings.filterwarnings("ignore")
@@ -132,3 +133,46 @@ class ChopTestDataset(Hip3DChopDataset):
             boxes,
             self.img_files[index],
         )
+
+
+@register_dataset("acdc")
+class ACDCDataset(BaseDataset):
+    def __init__(self, img_files, gt_files, config, mode):
+        super().__init__(img_files, gt_files, config, mode)
+
+        self.trn_aug = K.augmentation.AugmentationSequential(
+            K.augmentation.RandomAffine(
+                degrees=30, translate=(0.2, 0.2), shear=0, p=0.5, align_corners=False
+            ),
+            K.augmentation.RandomHorizontalFlip(p=0.5),
+            K.augmentation.RandomVerticalFlip(p=0.5),
+            data_keys=["input", "mask"],
+            random_apply=(2,),
+        )
+
+    @staticmethod
+    def read_image(path):
+        img = io.read_image(path)
+        if img.size(0) == 1:
+            img = img.repeat(3, 1, 1)
+        return img
+
+    @staticmethod
+    def read_mask(path):
+        mask = io.read_image(path)
+        return mask
+
+
+@register_dataset("acdc_test")
+class ACDCTestDataset(TestDataset):
+    @staticmethod
+    def read_image(path):
+        img = io.read_image(path)
+        if img.size(0) == 1:
+            img = img.repeat(3, 1, 1)
+        return img
+
+    @staticmethod
+    def read_mask(path):
+        mask = io.read_image(path)
+        return mask
