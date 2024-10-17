@@ -27,6 +27,8 @@ from sam2rad import (
     build_samrad,
     convert_to_semantic,
     focal_loss,
+    dice_loss,
+    CompositeLoss,
     get_dataloaders,
     overlay_contours,
 )
@@ -421,7 +423,13 @@ if __name__ == "__main__":
         / math.sqrt(256)
     )
 
-    loss_fn = partial(focal_loss, reduction="none", alpha=0.7, gamma=3)
+    loss_fn = CompositeLoss(
+        [
+            partial(dice_loss, reduction="none"),
+            partial(focal_loss, reduction="none", alpha=0.7, gamma=3),
+        ],
+        weights=[1.0, 10.0],
+    )
 
     model = SegmentationModule(config, {config.dataset.name: class_tokens})
     print(model)
