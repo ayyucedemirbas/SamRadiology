@@ -5,7 +5,7 @@ Requirements
 1.	Clone the Repository
 
 ```bash
-git clone https://github.com/nidus-lab/sam2rad.git
+git clone https://github.com/aswahd/SamRadiology.git
 cd sam2rad
 ```
 
