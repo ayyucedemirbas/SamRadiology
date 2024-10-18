@@ -1,6 +1,6 @@
-import math
 from typing import Type
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -9,8 +9,51 @@ from sam2.modeling.sam.transformer import (
     TwoWayAttentionBlock,
 )
 from sam2.modeling.sam2_utils import MLP
+from .registry import register_prompt_predictor
 
-PROMPT_PREDICTORS = {}
+
+def get_emb(sin_inp):
+    """
+    Gets a base embedding for one dimension with sin and cos intertwined
+    """
+    emb = torch.stack((sin_inp.sin(), sin_inp.cos()), dim=-1)
+    return torch.flatten(emb, -2, -1)
+
+
+class PositionEmbeddingSine1D(nn.Module):
+    def __init__(self, channels):
+        """
+        :param channels: The last dimension of the tensor you want to apply pos emb to.
+        """
+        super(PositionEmbeddingSine1D, self).__init__()
+        self.org_channels = channels
+        channels = int(np.ceil(channels / 2) * 2)
+        self.channels = channels
+        inv_freq = 1.0 / (10000 ** (torch.arange(0, channels, 2).float() / channels))
+        self.register_buffer("inv_freq", inv_freq)
+        self.register_buffer("cached_penc", None, persistent=False)
+
+    def forward(self, tensor):
+        """
+        :param tensor: A 3d tensor of size (batch_size, x, ch)
+        :return: Positional Encoding Matrix of size (batch_size, x, ch)
+        """
+        if len(tensor.shape) != 3:
+            raise RuntimeError("The input tensor has to be 3d!")
+
+        if self.cached_penc is not None and self.cached_penc.shape == tensor.shape:
+            return self.cached_penc
+
+        self.cached_penc = None
+        batch_size, x, orig_ch = tensor.shape
+        pos_x = torch.arange(x, device=tensor.device, dtype=self.inv_freq.dtype)
+        sin_inp_x = torch.einsum("i,j->ij", pos_x, self.inv_freq)
+        emb_x = get_emb(sin_inp_x)
+        emb = torch.zeros((x, self.channels), device=tensor.device, dtype=tensor.dtype)
+        emb[:, : self.channels] = emb_x
+
+        self.cached_penc = emb[None, :, :orig_ch].repeat(batch_size, 1, 1)
+        return self.cached_penc
 
 
 class BoxRegressionHead(torch.nn.Module):
@@ -54,70 +97,6 @@ class MaskClassifier(torch.nn.Module):
         return x
 
 
-# Source: https://github.com/wzlxjtu/PositionalEncoding2D/blob/d1714f29938970a4999689255f2c230a0b63ebda/positionalembedding2d.py#L24
-def positionalencoding2d(d_model, height, width):
-    """
-    :param d_model: dimension of the model
-    :param height: height of the positions
-    :param width: width of the positions
-    :return: d_model*height*width position matrix
-    """
-    if d_model % 4 != 0:
-        raise ValueError(
-            "Cannot use sin/cos positional encoding with "
-            "odd dimension (got dim={:d})".format(d_model)
-        )
-    pe = torch.zeros(d_model, height, width)
-    # Each dimension use half of d_model
-    d_model = int(d_model / 2)
-    div_term = torch.exp(torch.arange(0.0, d_model, 2) * -(math.log(10000.0) / d_model))
-    pos_w = torch.arange(0.0, width).unsqueeze(1)
-    pos_h = torch.arange(0.0, height).unsqueeze(1)
-    pe[0:d_model:2, :, :] = (
-        torch.sin(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
-    )
-    pe[1:d_model:2, :, :] = (
-        torch.cos(pos_w * div_term).transpose(0, 1).unsqueeze(1).repeat(1, height, 1)
-    )
-    pe[d_model::2, :, :] = (
-        torch.sin(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
-    )
-    pe[d_model + 1 :: 2, :, :] = (
-        torch.cos(pos_h * div_term).transpose(0, 1).unsqueeze(2).repeat(1, 1, width)
-    )
-
-    return pe
-
-
-def register_prompt_predictor(name):
-    """
-    Register prompt predictor.
-    """
-
-    def register_model_cls(cls):
-        if name in PROMPT_PREDICTORS:
-            raise ValueError(f"Cannot register duplicate model ({name})")
-        PROMPT_PREDICTORS[name] = cls
-        return cls
-
-    return register_model_cls
-
-
-class PromptPredictor(nn.Module):
-    """
-    A prompt predictor to predict prompts from image embeddings.
-    """
-
-
-@register_prompt_predictor("identity")
-class IdentityTransformer(PromptPredictor):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, point_pe: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return point_pe
-
-
 @register_prompt_predictor("linear")
 class TwoWayCrossAttention(TwoWayAttentionBlock):
     def __init__(
@@ -139,6 +118,7 @@ class TwoWayCrossAttention(TwoWayAttentionBlock):
             skip_first_layer_pe,
         )
         self.pos_encoding = PositionEmbeddingSine(embedding_dim)
+        self.pos_encoding_1d = PositionEmbeddingSine1D(embedding_dim)
 
         self.box_regression_head = BoxRegressionHead(
             in_features=256 * 2, hidden_dim=256, num_layers=2
@@ -161,13 +141,16 @@ class TwoWayCrossAttention(TwoWayAttentionBlock):
         # BxCxHxW -> BxHWxC == B x N_image_tokens x C
         bs, c, h, w = image_embedding.shape
         image_pe = self.pos_encoding(image_embedding[:1])
-        image_embedding = image_embedding.flatten(2).permute(0, 2, 1)
-        image_pe = image_pe.flatten(2).permute(0, 2, 1)
+        query_pe = self.pos_encoding_1d(point_embedding)  # B x N_query_tokens x C
+        image_embedding = image_embedding.flatten(2).permute(
+            0, 2, 1
+        )  # B x N_image_tokens x C
+        image_pe = image_pe.flatten(2).permute(0, 2, 1)  # B x N_image_tokens x C
 
         sparse_embeddings, dense_embeddings = super().forward(
             queries=point_embedding,
             keys=image_embedding,
-            query_pe=point_embedding,
+            query_pe=query_pe,
             key_pe=image_pe,
         )
         dense_embeddings = dense_embeddings.view(bs, h, w, -1).permute(0, 3, 1, 2)

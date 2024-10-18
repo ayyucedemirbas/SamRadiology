@@ -7,11 +7,11 @@ from sam2rad.decoders.build_decoder import *
 from sam2rad.decoders.registry import MASK_DECODER_REGISTRY
 from sam2rad.encoders.build_encoder import *
 from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
+from sam2rad.models.ppn import PROMPT_PREDICTORS
+from sam2rad.models.ppn.prompt_sampler import PromptSampler
 from sam2rad.models.sam.modeling import PromptEncoder
 
 from .model import Model
-from .prompt_learning import PROMPT_PREDICTORS
-from .prompt_sampler import PromptSampler
 
 
 def build_model(args):
@@ -74,8 +74,8 @@ def build_model(args):
         prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
             prompt_encoder=prompt_encoder,
             embedding_dim=prompt_encoder.embed_dim,
-            num_heads=1,
-            mlp_dim=256,
+            num_heads=8,
+            mlp_dim=256 * 8,
         ),
     )
 

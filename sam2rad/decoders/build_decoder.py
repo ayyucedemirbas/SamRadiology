@@ -251,8 +251,8 @@ class LoRAMaskDecoderFactory(MaskDecoderFactory):
             transformer_dim=args.prompt_embed_dim,
             iou_head_depth=3,
             iou_head_hidden_dim=256,
-            pred_obj_scores=args.pred_obj_scores,
-            pred_obj_scores_mlp=args.pred_obj_scores_mlp,
+            pred_obj_scores=args.get("pred_obj_scores", True),
+            pred_obj_scores_mlp=args.get("pred_obj_scores_mlp", True),
         )
         assert args.r > 0, "r must be a positive integer."
 

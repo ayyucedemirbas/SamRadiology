@@ -6,15 +6,13 @@ import torch.nn.functional as F
 from sam2rad.models import Model as BaseModel
 from sam2rad.models.sam.modeling import ImageEncoderViT, MaskDecoder
 
-from .prompt_sampler import PromptSampler
-
 
 class Model(BaseModel):
     def __init__(
         self,
         image_encoder: ImageEncoderViT,
         mask_decoder: MaskDecoder,
-        prompt_sampler: PromptSampler,
+        prompt_sampler,
         pixel_mean: List[float] = [123.675, 116.28, 103.53],
         pixel_std: List[float] = [58.395, 57.12, 57.375],
     ):

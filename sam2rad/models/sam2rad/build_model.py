@@ -18,13 +18,13 @@ from sam2rad.blob.misc import DotDict
 from sam2rad.decoders.build_decoder import build_decoder_mlp
 from sam2rad.decoders.registry import MASK_DECODER_REGISTRY
 from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
+from sam2rad.models.ppn import PROMPT_PREDICTORS
 from sam2rad.models.sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2rad.models.sam2.modeling.sam.prompt_encoder import PromptEncoder
 from sam2rad.models.sam2.modeling.sam.transformer import RoPEAttention
-from sam2rad.models.sam2rad.prompt_sampler import PromptSampler
+from sam2rad.models.ppn import PromptSampler
 
 from .model import Model
-from .prompt_learning import PROMPT_PREDICTORS
 
 # fmt: off
 CONFIG = """
@@ -316,8 +316,8 @@ def build_model(args) -> Model:
         prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
             prompt_encoder=prompt_encoder,
             embedding_dim=prompt_encoder.embed_dim,
-            num_heads=1,
-            mlp_dim=256,
+            num_heads=8,
+            mlp_dim=256 * 8,
         ),
     )
 

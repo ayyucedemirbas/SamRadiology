@@ -51,13 +51,13 @@ class SavePredictionsCallback(pl.Callback):
         self.train_outputs = []
 
     def on_train_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if batch_idx < 10:
+        if batch_idx < 5:
             self.train_outputs.append(outputs)
 
         return super().on_train_batch_end(trainer, pl_module, outputs, batch, batch_idx)
 
     def on_validation_batch_end(self, trainer, pl_module, outputs, batch, batch_idx):
-        if batch_idx < 10:
+        if batch_idx < 5:
             self.val_outputs.append(outputs)
 
         return super().on_validation_batch_end(

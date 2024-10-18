@@ -1,10 +1,7 @@
-
 import torch
 import torch.nn as nn
 
 from sam2rad.models.sam.modeling import PromptEncoder
-
-from .prompt_learning import PromptPredictor
 
 
 class PromptSampler(nn.Module):
@@ -12,7 +9,7 @@ class PromptSampler(nn.Module):
     A prompt sampler that samples any number of prompts from learned prompts and manual prompts (box, point, or mask).
     """
 
-    def __init__(self, prompt_learner: PromptPredictor, prompt_encoder: PromptEncoder):
+    def __init__(self, prompt_learner, prompt_encoder: PromptEncoder):
         super().__init__()
         self.prompt_learner = prompt_learner
         self.prompt_encoder = prompt_encoder
@@ -107,6 +104,7 @@ class PromptSampler(nn.Module):
             device=sparse_embeddings.device,
         )
 
+        learned_dense_embeddings = None
         # If no manual prompts are provided, use only learned prompts
         if not (sparse_embeddings.size(1) > 0):
             (
@@ -136,11 +134,6 @@ class PromptSampler(nn.Module):
         else:  # Use only manual prompts
             output_sparse_embeddings = sparse_embeddings
             interim_mask_output = learned_dense_embeddings = pred_boxes = None
-
-        # Use learned learned dense embeddings?
-        # if random.random() < 0.1:
-        #     learned_dense_embeddings = None
-        #     interim_mask_output = None
 
         return {
             # "box_embeddings": sparse_embeddings,
