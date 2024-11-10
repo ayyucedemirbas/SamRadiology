@@ -22,13 +22,13 @@ from torchmetrics.classification import MulticlassJaccardIndex as IoU
 from sam2rad import (
     DATASETS,
     AverageMeter,
+    CompositeLoss,
     DotDict,
     build_sam2rad,
     build_samrad,
     convert_to_semantic,
-    focal_loss,
     dice_loss,
-    CompositeLoss,
+    focal_loss,
     get_dataloaders,
     overlay_contours,
 )
@@ -139,11 +139,11 @@ class SegmentationModule(torch.nn.Module):
 
     def __init__(
         self,
-        config,
+        cfg,
         prompts: Dict[str, torch.nn.Parameter],
     ):
         super(SegmentationModule, self).__init__()
-        self.model = build_model(config)
+        self.model = build_model(cfg)
         # Sometimes use manual prompts only (box, mask, etc.) so that the predicted prompts align with manual prompts.
         self.model.prompt_sampler.p[0] = 0.9  # Learned prompts
         # If box or mask prompt is used during training, the model can be prompted to correct a prediction by providing a box or mask prompt (human-in-the-loop)
@@ -153,7 +153,7 @@ class SegmentationModule(torch.nn.Module):
         self.dataset_names = list(prompts.keys())
         self.learnable_prompts = torch.nn.ParameterDict(prompts)
 
-        self.num_classes = self.learnable_prompts[config.dataset.name].size(0)
+        self.num_classes = self.learnable_prompts[cfg.dataset.name].size(0)
 
     def forward(self, batch, dataset_index=0, inference=False):
         """Get the learnable prompts for the dataset and make predictions"""

@@ -1,3 +1,4 @@
+from typing import List
 import torch
 import torch.nn as nn
 
@@ -22,11 +23,16 @@ class PromptSampler(nn.Module):
 
     def forward(
         self,
-        image_embedding: torch.Tensor,
-        learned_prompts: torch.Tensor,
+        *,
+        image_features: List[torch.Tensor],
+        learnable_prompts: torch.Tensor,
         batch,
     ) -> torch.Tensor:
-        return self.sample(image_embedding, learned_prompts, batch)
+        return self.sample(
+            image_features=image_features,
+            learnable_prompts=learnable_prompts,
+            batch=batch,
+        )
 
     def valid_sample(self, arr) -> bool:
         """
@@ -63,7 +69,8 @@ class PromptSampler(nn.Module):
 
     def sample(
         self,
-        image_embedding: torch.Tensor,
+        *,
+        image_features: List[torch.Tensor],
         learnable_prompts: torch.Tensor,
         batch: torch.Tensor,
     ):
@@ -71,8 +78,8 @@ class PromptSampler(nn.Module):
         Samples prompts for mask decoder.
 
         Parameters:
-        - image_embedding (torch.Tensor): The image embedding with shape (B, 256, H, W).
-        - learned_prompts (torch.Tensor): The learned prompts with shape (B, N, 256).
+        - image_features (torch.Tensor): A list of high resolution features and image embedding.
+        - learnable_prompts (torch.Tensor): The learned prompts with shape (B, N, 256).
         - batch: a batch of data .
 
         Returns:
@@ -112,7 +119,7 @@ class PromptSampler(nn.Module):
                 learned_dense_embeddings,
                 interim_mask_output,
                 pred_boxes,
-            ) = self.prompt_learner(image_embedding, learnable_prompts)
+            ) = self.prompt_learner(image_features=image_features, queries=learnable_prompts)
             output_sparse_embeddings = learned_sparse_embeddings
 
         elif sampled[
@@ -125,7 +132,7 @@ class PromptSampler(nn.Module):
                 learned_dense_embeddings,
                 interim_mask_output,
                 pred_boxes,
-            ) = self.prompt_learner(image_embedding, learnable_prompts)
+            ) = self.prompt_learner(image_features=image_features, queries=learnable_prompts)
 
             output_sparse_embeddings = torch.cat(
                 [learned_sparse_embeddings, sparse_embeddings], dim=1

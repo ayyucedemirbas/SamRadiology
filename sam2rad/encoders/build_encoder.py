@@ -1,6 +1,7 @@
 import logging
 from abc import abstractmethod
 from functools import partial
+from typing import Tuple
 
 import torch
 import torch.nn.functional as F
@@ -90,7 +91,6 @@ class ViTBackbone(ImageEncoderViT):
         encoder_global_attn_indexes,
         prompt_embed_dim,
         *args,
-        adapter_layers=0,
         **kwargs,
     ):
         super().__init__(
@@ -107,25 +107,26 @@ class ViTBackbone(ImageEncoderViT):
             window_size=14,
             out_chans=prompt_embed_dim,
         )
-        self.adapters = nn.ModuleList()
-        for block in self.net.blocks:
-            adapter = AdapterBlock(block)
-            self.adapters.append(adapter)
-            block.register_forward_pre_hook(partial(adapter_residual, adapter))
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        self.freeze_pretrained_parameters()
+
+    def freeze_pretrained_parameters(self):
+        for param in self.parameters():
+            param.requires_grad = False
+
+    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        high_res_features = []
         x = self.patch_embed(x)
         if self.pos_embed is not None:
             x = x + self.pos_embed
 
         for i, blk in enumerate(self.blocks):
-            if i > len(self.adapters):
-                x = blk(x) + self.adapters[i](x)
-            else:
-                x = blk(x)
+            x = blk(x)
+            high_res_features.append(x.permute(0, 3, 1, 2))
+
         x = self.neck(x.permute(0, 3, 1, 2))
 
-        return x
+        return x, high_res_features[-2:]
 
 
 # Image encoders with adapter layers
@@ -140,10 +141,20 @@ class SAMAdapter(ImageEncoder):
         self.img_size = self.net.img_size
 
         self.adapters = nn.ModuleList()
-        for block in self.net.blocks:
+        for block in self.net.blocks[-5:]:
             adapter = AdapterBlock(block)
             self.adapters.append(adapter)
             block.register_forward_pre_hook(partial(adapter_residual, adapter))
+
+        self.freeze_pretrained_parameters()
+
+    def freeze_pretrained_parameters(self):
+        trainable_modules = ["adapters", "patch_adapter", "lora"]
+        for name, param in self.net.named_parameters():
+            if any(mod in name for mod in trainable_modules):
+                param.requires_grad = True
+            else:
+                param.requires_grad = False
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
         """
@@ -227,12 +238,8 @@ class SAMImageEncoder(ImageEncoder):
         self.freeze_pretrained_parameters()
 
     def freeze_pretrained_parameters(self):
-        trainable_modules = ["adapters", "patch_adapter", "lora"]
-        for name, param in self.net.named_parameters():
-            if any(mod in name for mod in trainable_modules):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+        for param in self.net.parameters():
+            param.requires_grad = False
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
         """
@@ -296,7 +303,6 @@ class SAMViTBAdapterFactory(SAMAdapterFactory):
 
     def get_backbone(self, args) -> nn.Module:
         return ViTBackbone(
-            adapter_layers=args.adapter_layers,
             image_size=args.image_size,
             patch_size=args.patch_size,
             prompt_embed_dim=args.prompt_embed_dim,
@@ -319,7 +325,6 @@ class SAMViTLAdapterFactory(ImageEncoderFactory):
 
     def get_backbone(self, args) -> nn.Module:
         return ViTBackbone(
-            adapter_layers=args.adapter_layers,
             image_size=args.image_size,
             patch_size=args.patch_size,
             prompt_embed_dim=args.prompt_embed_dim,
@@ -342,7 +347,6 @@ class SAMViTHAdapterFactory(ImageEncoderFactory):
 
     def get_backbone(self, args) -> nn.Module:
         return ViTBackbone(
-            adapter_layers=args.adapter_layers,
             image_size=args.image_size,
             patch_size=args.patch_size,
             prompt_embed_dim=args.prompt_embed_dim,
@@ -385,9 +389,8 @@ class SAMViTBFactory(SAMImageEncoderFactory):
             encoder_global_attn_indexes=[2, 5, 8, 11],
         )
 
-    def build(self, args) -> SAMViTBAdapter:
-        backbone = self.get_backbone(args)
-        return SAMViTBAdapter(backbone)
+    def build(self, args) -> ViTBackbone:
+        return self.get_backbone(args)
 
 
 @register_image_encoder("sam_vit_l")
@@ -407,9 +410,8 @@ class SAMViTLFactory(SAMImageEncoderFactory):
             encoder_global_attn_indexes=[5, 11, 17, 23],
         )
 
-    def build(self, args) -> SAMViTBAdapter:
-        backbone = self.get_backbone(args)
-        return SAMViTBAdapter(backbone)
+    def build(self, args) -> ViTBackbone:
+        return self.get_backbone(args)
 
 
 @register_image_encoder("sam_vit_h")
@@ -429,9 +431,8 @@ class SAMViTHFactory(SAMImageEncoderFactory):
             encoder_global_attn_indexes=[7, 15, 23, 31],
         )
 
-    def build(self, args) -> SAMViTBAdapter:
-        backbone = self.get_backbone(args)
-        return SAMViTBAdapter(backbone)
+    def build(self, args) -> ViTBackbone:
+        return self.get_backbone(args)
 
 
 class TinyViTImageEncoder(ImageEncoder):
@@ -563,12 +564,8 @@ class Sam2TinyHiera(ImageEncoder):
         self.freeze_pretrained_parameters()
 
     def freeze_pretrained_parameters(self):
-        trainable_modules = ["adapters", "patch_adapter", "lora"]
-        for name, param in self.net.named_parameters():
-            if any(mod in name for mod in trainable_modules):
-                param.requires_grad = True
-            else:
-                param.requires_grad = False
+        for param in self.net.parameters():
+            param.requires_grad = False
 
     def load_checkpoint(self, checkpoint_path: str) -> None:
         """

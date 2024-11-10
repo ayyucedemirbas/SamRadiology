@@ -39,7 +39,10 @@ class Model(BaseModel):
         image = batch["images"]
         masks = batch.get("masks", None)
         assert inference or masks is not None, "Masks must be provided during training."
-        image_embedding = self.image_encoder(image)  # (B, 256, H//16, W//16)
+        image_embedding, high_res_features = self.image_encoder(
+            image
+        )  # (B, 256, H//16, W//16)
+
         image_pe = self.prompt_sampler.prompt_encoder.get_dense_pe().detach()
         # If not evaluating the manual prompts, use the learnable prompts
         # If there are batched prompts per image, repeat the image embedding
@@ -47,10 +50,15 @@ class Model(BaseModel):
         num_classes = learnable_prompts.shape[0]
         learnable_prompts = learnable_prompts.repeat(batch_size, 1, 1)
         image_embedding = image_embedding.repeat_interleave(num_classes, dim=0)
+        for i, feat in enumerate(high_res_features):
+            high_res_features[i] = feat.repeat_interleave(num_classes, dim=0)
 
         if inference:  # Use predicted prompts only
             sparse_embeddings, dense_embeddings, interim_mask_output, pred_boxes = (
-                self.prompt_sampler.prompt_learner(image_embedding, learnable_prompts)
+                self.prompt_sampler.prompt_learner(
+                    image_features=high_res_features + [image_embedding],
+                    queries=learnable_prompts,
+                )
             )
 
             # Upsample to original image size
@@ -60,7 +68,9 @@ class Model(BaseModel):
 
         else:  # Use both predicted and manual prompts
             prompt_outputs = self.prompt_sampler(
-                image_embedding, learnable_prompts, batch
+                image_features=high_res_features + [image_embedding],
+                learnable_prompts=learnable_prompts,
+                batch=batch,
             )
 
             sparse_embeddings = prompt_outputs["sparse_embeddings"]

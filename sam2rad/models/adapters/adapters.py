@@ -30,7 +30,7 @@ class AdapterBlock(nn.Module):
         super().__init__()
         dim = blk.attn.qkv.in_features
         self.adapters = nn.Sequential(
-            nn.Linear(dim, 128), nn.GELU(), nn.Linear(128, dim), nn.GELU()
+            nn.Linear(dim, 64), nn.GELU(), nn.Linear(64, dim), nn.GELU()
         )
 
     def forward(self, x):

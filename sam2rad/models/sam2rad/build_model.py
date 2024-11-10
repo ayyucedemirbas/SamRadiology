@@ -129,7 +129,7 @@ model:
   iou_prediction_use_sigmoid: True
   # cross-attend to object pointers from other frames (based on SAM output tokens) in the encoder
   use_obj_ptrs_in_encoder: true
-  add_tpos_enc_to_obj_ptrs: false
+  add_tpos_enc_to_obj_ptrs: true
   only_obj_ptrs_in_the_past_for_eval: true
   # object occlusion prediction
   pred_obj_scores: true
@@ -151,7 +151,7 @@ model:
   add_all_frames_to_correct_as_cond: false
   non_overlap_masks_for_mem_enc: false
   max_obj_ptrs_in_encoder: 16
-  proj_tpos_enc_in_obj_ptrs: false
+  proj_tpos_enc_in_obj_ptrs: true
   soft_no_obj_ptr: false
   sam_mask_decoder_extra_args: null
 """
@@ -281,14 +281,15 @@ def build_model(args) -> Model:
     )
 
     # Build prompt encoder
-    sam_image_embedding_size = CONFIG.model.image_size // CONFIG.model.backbone_stride
+    args.image_size = args.dataset.image_size
+    sam_image_embedding_size = args.image_size // CONFIG.model.backbone_stride
     prompt_encoder = PromptEncoder(
         embed_dim=memory_attention.d_model,
         image_embedding_size=(
             sam_image_embedding_size,
             sam_image_embedding_size,
         ),
-        input_image_size=(CONFIG.model.image_size, CONFIG.model.image_size),
+        input_image_size=(args.image_size, args.image_size),
         mask_in_chans=16,
     )
 
@@ -312,13 +313,15 @@ def build_model(args) -> Model:
     )
 
     prompt_sampler = PromptSampler(
-        prompt_encoder=prompt_encoder,
-        prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
+        prompt_learner=PROMPT_PREDICTORS[
+            args.get("prompt_predictor", "sam2_high_res_ppn")
+        ](
             prompt_encoder=prompt_encoder,
             embedding_dim=prompt_encoder.embed_dim,
             num_heads=8,
             mlp_dim=256 * 8,
         ),
+        prompt_encoder=prompt_encoder,
     )
 
     logging.info("Prompt sampler loaded successfully.")
@@ -327,6 +330,7 @@ def build_model(args) -> Model:
     CONFIG.model.update(
         {
             "hidden_dim": memory_attention.d_model,
+            "mem_dim": image_encoder.net.neck.d_model,
             "r": 8,  # if LoRA is used
         }
     )
@@ -355,8 +359,8 @@ def build_model(args) -> Model:
             for k, v in state_dict.items()
             if "obj_ptr_tpos_proj" in k
         }
-        obj_ptr_proj.load_state_dict(state_dict_obj_ptr_proj)
-        obj_ptr_tpos_proj.load_state_dict(state_dict_obj_ptr_tpos_proj)
+        # obj_ptr_proj.load_state_dict(state_dict_obj_ptr_proj)
+        # obj_ptr_tpos_proj.load_state_dict(state_dict_obj_ptr_tpos_proj)
     except RuntimeError:
         logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
@@ -377,7 +381,7 @@ def build_model(args) -> Model:
         obj_ptr_proj=obj_ptr_proj,
         obj_ptr_tpos_proj=obj_ptr_tpos_proj,
         num_maskmem=CONFIG.model.num_maskmem,
-        image_size=CONFIG.model.image_size,
+        image_size=args.image_size,
         backbone_stride=CONFIG.model.backbone_stride,
         sigmoid_scale_for_mem_enc=CONFIG.model.sigmoid_scale_for_mem_enc,
         sigmoid_bias_for_mem_enc=CONFIG.model.sigmoid_bias_for_mem_enc,
@@ -415,6 +419,8 @@ def build_model(args) -> Model:
         "sam_prompt_encoder.",
         "prompt_sampler.",
         "box_regression_head",
+        "no_obj_embed_spatial",
+        "obj_ptr_tpos_proj",
     ]
 
     state_dict = {
@@ -435,6 +441,7 @@ def build_model(args) -> Model:
         warnings.warn(f"Missing keys: {missing_keys}")
 
     if unexpected_keys:
+        print(unexpected_keys)
         logging.error(unexpected_keys)
         raise RuntimeError()
 

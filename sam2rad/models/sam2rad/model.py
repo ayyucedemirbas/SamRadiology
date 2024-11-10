@@ -197,6 +197,9 @@ class Model(BaseModel):
             (64, 64),
         ]
 
+        scale = 1024 // self.image_size
+        self._bb_feat_sizes = [(h // scale, w // scale) for h, w in self._bb_feat_sizes]
+
         self.freeze_pretrained_parameters()
 
     def freeze_pretrained_parameters(self):
@@ -252,7 +255,10 @@ class Model(BaseModel):
 
         if inference:  # Use predicted prompts only
             sparse_embeddings, dense_embeddings, interim_mask_output, pred_boxes = (
-                self.prompt_sampler.prompt_learner(image_embedding, learnable_prompts)
+                self.prompt_sampler.prompt_learner(
+                    image_features=high_res_features + [image_embedding],
+                    queries=learnable_prompts,
+                )
             )
 
             # Upsample to original image size
@@ -262,7 +268,9 @@ class Model(BaseModel):
 
         else:  # Use both predicted and manual prompts
             prompt_outputs = self.prompt_sampler(
-                image_embedding, learnable_prompts, batch
+                image_features=high_res_features + [image_embedding],
+                learnable_prompts=learnable_prompts,
+                batch=batch,
             )
 
             sparse_embeddings = prompt_outputs["sparse_embeddings"]

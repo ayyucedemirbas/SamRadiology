@@ -21,6 +21,7 @@ def build_model(args):
 
     prompt_embed_dim = 256
     vit_patch_size = 16
+    args.image_size = args.dataset.image_size
     image_embedding_size = args.image_size // vit_patch_size
     args.prompt_embed_dim = prompt_embed_dim
     args.patch_size = vit_patch_size
@@ -66,12 +67,11 @@ def build_model(args):
         logging.info(f"Loaded SAM prompt encoder from {args.sam_checkpoint}.")
     except AttributeError:
         logging.info("No SAM checkpoint loaded. Loading without pre-trained weights.")
-        # raise RuntimeError("No SAM checkpoint loaded. Loading without pre-trained weights.")
         warnings.warn("No SAM checkpoint loaded. Loading without pre-trained weights.")
 
     prompt_sampler = PromptSampler(
         prompt_encoder=prompt_encoder,
-        prompt_learner=PROMPT_PREDICTORS[args.get("prompt_predictor", "linear")](
+        prompt_learner=PROMPT_PREDICTORS[args["prompt_predictor"]](
             prompt_encoder=prompt_encoder,
             embedding_dim=prompt_encoder.embed_dim,
             num_heads=8,
