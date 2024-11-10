@@ -29,9 +29,36 @@ Download the pre-trained weights from the official SAM repository and place them
 
 
 ## Quickstart
+
+File structure:
+```markdown
+root
+├── Train
+│   ├── imgs
+            ├── 1.png
+            ├── 2.png
+            ├── ...
+            |
+│   └── gts
+            ├── 1.png
+            ├── 2.png
+            ├── ...
+└── Test
+    ├── imgs
+            ├── 1.png
+            ├── 2.png
+            ├── ...
+    └── gts
+            ├── 1.png
+            ├── 2.png
+            ├── ...
+```
+
+
 Download Sample Dataset:
 - Download the preprocessed data from [ACDC dataset](https://drive.google.com/drive/folders/14WIOWTF1WWwMaHV7UVo5rjWujpUxGetJ?usp=sharing).
 - Extract the data to `./datasets/ACDCPreprocessed`.
+
 
 
 ## Models
