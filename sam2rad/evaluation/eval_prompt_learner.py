@@ -17,10 +17,10 @@ from sam2rad import (
     DotDict,
     build_sam2rad,
     build_samrad,
-    colorize_mask,
     convert_to_semantic,
 )
 
+logger = logging.getLogger("sam2rad")
 
 def build_model(config):
     """
@@ -51,7 +51,7 @@ class SegmentationModel(torch.nn.Module):
         super(SegmentationModel, self).__init__()
         assert "sam_checkpoint" in config, "SAM checkpoint is required."
         self.model = build_model(config)
-        print(self.model)
+        logger.info(self.model)
         self.dataset_names = list(prompts.keys())
         self.num_classes = list(prompts.values())[0].shape[0]
         self.learnable_prompts = torch.nn.ParameterDict(prompts)
@@ -171,8 +171,8 @@ class Eval:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)]
+    logger.basicConfig(
+        level=logger.INFO, handlers=[logger.StreamHandler(sys.stdout)]
     )
     args = parser.parse_args()
 
@@ -202,14 +202,14 @@ if __name__ == "__main__":
     )
 
     learnable_prompts = {config.dataset.name: class_tokens}
-    print(f"Test dataset size: {len(tst_dl.dataset)}")
+    logger.info(f"Test dataset size: {len(tst_dl.dataset)}")
     model = SegmentationModel(config, learnable_prompts)
     # Load checkpoint
     checkpoint = torch.load(config.inference.checkpoint_path, map_location="cpu")
     epoch = checkpoint["epoch"]
     checkpoint = checkpoint["state_dict"]
     checkpoint = {k[len("model.") :]: v for k, v in checkpoint.items()}
-    print(model.load_state_dict(checkpoint))
+    logger.info(model.load_state_dict(checkpoint))
 
     model = model.to("cuda:0")
     model.eval()
@@ -252,17 +252,17 @@ if __name__ == "__main__":
     results_str += "-" * 32 + "\n"
     results_str += "{:<10} {:>10.4f} {:>10.4f}\n".format("Average", avg_dice, avg_iou)
 
-    print(results_str)
+    logger.info(results_str)
 
     results_str = yaml.dump(config) + results_str
 
     # Topk images with the lowest Dice score
     dice_scores_per_img = evaluator.dice_metric.aggregate("none").nanmean(dim=1)
     values, indices = torch.topk(dice_scores_per_img, k=5, largest=False)
-    print("Top 5 images with the least Dice score:")
+    logger.info("Top 5 images with the least Dice score:")
     results_str += "\nTop 5 images with the least Dice score:\n"
     for dice, idx in zip(values, indices):
-        print(f"{tst_dl.dataset.img_files[idx.item()]}, Dice: {dice.item()}")
+        logger.info(f"{tst_dl.dataset.img_files[idx.item()]}, Dice: {dice.item()}")
         results_str += f"{tst_dl.dataset.img_files[idx.item()]}, Dice: {dice.item()}\n"
 
     # Write the results to the output file
@@ -270,4 +270,4 @@ if __name__ == "__main__":
         f.write(results_str)
         f.write("\n")
 
-    print("Results saved to ", output_file)
+    logger.info("Results saved to %s" % output_file)

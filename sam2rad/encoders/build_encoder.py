@@ -15,6 +15,9 @@ from .base import ImageEncoder, ImageEncoderFactory
 from .registry import register_image_encoder
 
 
+logger = logging.getLogger("sam2rad")
+
+
 def resize_pos_embedding(sam_state_dict, new_state_dict, image_size, vit_patch_size):
     """
     Resize positional embedding match new image size.
@@ -189,14 +192,14 @@ class SAMAdapter(ImageEncoder):
         }
 
         if missing_keys:
-            logging.error(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         if unexpected_keys:
-            logging.error(unexpected_keys)
+            logger.error(unexpected_keys)
             raise RuntimeError()
 
-        logging.info(
+        logger.info(
             "%s loaded checkpoint from %s successfully.",
             self.net.__class__.__name__,
             checkpoint_path,
@@ -479,7 +482,7 @@ class TinyViTImageEncoder(ImageEncoder):
         }
 
         if missing_keys:
-            print(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         unexpected_keys = {
@@ -487,10 +490,10 @@ class TinyViTImageEncoder(ImageEncoder):
         }
 
         if unexpected_keys:
-            print(unexpected_keys)
+            logger.erro(unexpected_keys)
             raise RuntimeError()
 
-        print(
+        logger.info(
             "{} loaded checkpoint from {} successfully.".format(
                 self.net.__class__.__name__,
                 checkpoint_path,
@@ -591,7 +594,7 @@ class Sam2TinyHiera(ImageEncoder):
         }
 
         if missing_keys:
-            print(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         unexpected_keys = {
@@ -599,10 +602,10 @@ class Sam2TinyHiera(ImageEncoder):
         }
 
         if unexpected_keys:
-            print(unexpected_keys)
+            logger.erro(unexpected_keys)
             raise RuntimeError()
 
-        print(
+        logger.info(
             "{} loaded checkpoint from {} successfully.".format(
                 self.net.__class__.__name__,
                 checkpoint_path,

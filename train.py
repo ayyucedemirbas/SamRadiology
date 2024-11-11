@@ -1,7 +1,6 @@
 import argparse
 import logging
 import math
-import sys
 from functools import partial
 from typing import Dict, List, Tuple
 
@@ -32,8 +31,11 @@ from sam2rad import (
     get_dataloaders,
     overlay_contours,
 )
+from sam2rad.logging import setup_logging
 
-logging.basicConfig(level=logging.INFO, handlers=[logging.StreamHandler(sys.stdout)])
+setup_logging(output="training_logs", name="sam2rad")
+
+logger = logging.getLogger("sam2rad")
 
 torch.set_float32_matmul_precision("high")
 
@@ -410,8 +412,8 @@ if __name__ == "__main__":
     trn_dl = get_dataloaders(config.dataset, trn_ds)
     val_dl = get_dataloaders(config.dataset, val_ds)
 
-    print(f"Train dataset size: {len(trn_dl.dataset)}")
-    print(f"Validation dataset size: {len(val_dl.dataset)}")
+    logger.info(f"Train dataset size: {len(trn_dl.dataset)}")
+    logger.info(f"Validation dataset size: {len(val_dl.dataset)}")
 
     # Initialize learnable prompts for each dataset
     class_tokens = torch.nn.Parameter(
@@ -432,7 +434,7 @@ if __name__ == "__main__":
     )
 
     model = SegmentationModule(config, {config.dataset.name: class_tokens})
-    print(model)
+    logger.info(model)
     termcolor.colored("Trainable parameters:", "red")
     for name, param in model.named_parameters():
         if param.requires_grad:

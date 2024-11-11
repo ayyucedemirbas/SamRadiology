@@ -12,6 +12,8 @@ from sam2rad.models.sam.modeling.transformer import TwoWayTransformer
 from .base import MaskDecoder, MaskDecoderFactory
 from .registry import register_mask_decoder
 
+logger = logging.getLogger("sam2rad")
+
 
 class LoRAqkv(nn.Module):
     """
@@ -78,14 +80,14 @@ class SAMMaskDecoder(MaskDecoder):
         }
 
         if missing_keys:
-            logging.error(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         if unexpected_keys:
-            logging.error(unexpected_keys)
+            logger.error(unexpected_keys)
             raise RuntimeError()
 
-        logging.info(
+        logger.info(
             "%s loaded checkpoint from %s successfully.",
             self.net.__class__.__name__,
             checkpoint_path,
@@ -146,7 +148,7 @@ class LoRAMaskDecoder(MaskDecoder):
         # Sanity check
         for k in state_dict:
             if k not in self.net.state_dict().keys():
-                print(f"Key {k} not found in model state_dict.")
+                logger.error(f"Key {k} not found in model state_dict.")
                 raise RuntimeError()
 
         lora_params = (
@@ -165,14 +167,14 @@ class LoRAMaskDecoder(MaskDecoder):
         ]
 
         if missing_keys:
-            logging.error(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         if unexpected_keys:
-            logging.error(unexpected_keys)
+            logger.error(unexpected_keys)
             raise RuntimeError()
 
-        logging.info(
+        logger.info(
             "%s loaded checkpoint from %s successfully.",
             self.net.__class__.__name__,
             checkpoint_path,
@@ -308,7 +310,7 @@ class SAM2MaskDecoder(MaskDecoder):
         }
         self.net.load_state_dict(state_dict)
 
-        logging.info(
+        logger.info(
             "%s loaded from checkpoint %s successfully.",
             self.net.__class__.__name__,
             checkpoint_path,
@@ -434,7 +436,7 @@ class SAM2LoRAMaskDecoder(SAM2MaskDecoder):
         # Sanity check
         for k in state_dict:
             if k not in self.net.state_dict().keys():
-                print(f"Key {k} not found in model state_dict.")
+                logger.error(f"Key {k} not found in model state_dict.")
 
         lora_params = ("w_a", "w_b")
         missing_keys, unexpected_keys = self.net.load_state_dict(
@@ -445,14 +447,14 @@ class SAM2LoRAMaskDecoder(SAM2MaskDecoder):
         }
 
         if missing_keys:
-            logging.error(missing_keys)
+            logger.error(missing_keys)
             raise RuntimeError()
 
         if unexpected_keys:
-            logging.error(unexpected_keys)
+            logger.error(unexpected_keys)
             raise RuntimeError()
 
-        logging.info(
+        logger.info(
             "%s loaded checkpoint from %s successfully.",
             self.net.__class__.__name__,
             checkpoint_path,

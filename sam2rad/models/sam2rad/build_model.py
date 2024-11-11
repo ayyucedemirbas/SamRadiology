@@ -1,5 +1,4 @@
 import logging
-import warnings
 
 import torch
 import yaml
@@ -18,13 +17,14 @@ from sam2rad.blob.misc import DotDict
 from sam2rad.decoders.build_decoder import build_decoder_mlp
 from sam2rad.decoders.registry import MASK_DECODER_REGISTRY
 from sam2rad.encoders.registry import IMAGE_ENCODER_REGISTRY
-from sam2rad.models.ppn import PROMPT_PREDICTORS
+from sam2rad.models.ppn import PROMPT_PREDICTORS, PromptSampler
 from sam2rad.models.sam2.modeling.position_encoding import PositionEmbeddingSine
 from sam2rad.models.sam2.modeling.sam.prompt_encoder import PromptEncoder
 from sam2rad.models.sam2.modeling.sam.transformer import RoPEAttention
-from sam2rad.models.ppn import PromptSampler
 
 from .model import Model
+
+logger = logging.getLogger("sam2rad")
 
 # fmt: off
 CONFIG = """
@@ -173,7 +173,7 @@ def build_model(args) -> Model:
         image_encoder.load_checkpoint(args.sam_checkpoint)
     except RuntimeError:
         # We only need to load pre-trained SAM checkpoint during training
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
 
     # TODO: get the parameters from the config file
@@ -226,10 +226,10 @@ def build_model(args) -> Model:
         memory_attention.load_state_dict(state_dict)
 
     except RuntimeError:
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
 
-    logging.info(
+    logger.info(
         "%s loaded from checkpoint %s successfully.",
         memory_attention.__class__.__name__,
         args.sam_checkpoint,
@@ -271,10 +271,10 @@ def build_model(args) -> Model:
         }
         memory_encoder.load_state_dict(state_dict)
     except RuntimeError:
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
 
-    logging.info(
+    logger.info(
         "%s loaded from checkpoint %s successfully.",
         memory_encoder.__class__.__name__,
         args.sam_checkpoint,
@@ -304,9 +304,9 @@ def build_model(args) -> Model:
 
         prompt_encoder.load_state_dict(state_dict)
     except RuntimeError:
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
-    logging.info(
+    logger.info(
         "%s loaded from checkpoint %s successfully.",
         prompt_encoder.__class__.__name__,
         args.sam_checkpoint,
@@ -324,7 +324,7 @@ def build_model(args) -> Model:
         prompt_encoder=prompt_encoder,
     )
 
-    logging.info("Prompt sampler loaded successfully.")
+    logger.info("Prompt sampler loaded successfully.")
 
     # Build decoder
     CONFIG.model.update(
@@ -338,7 +338,7 @@ def build_model(args) -> Model:
     try:
         mask_decoder.load_checkpoint(args.sam_checkpoint)
     except RuntimeError:
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
 
     # Build decoder MLPs
@@ -362,10 +362,10 @@ def build_model(args) -> Model:
         # obj_ptr_proj.load_state_dict(state_dict_obj_ptr_proj)
         # obj_ptr_tpos_proj.load_state_dict(state_dict_obj_ptr_tpos_proj)
     except RuntimeError:
-        logging.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.error("No SAM checkpoint loaded. Loading without pre-trained weights.")
         raise
 
-    logging.info(
+    logger.info(
         "%s and %s loaded from checkpoint %s successfully.",
         obj_ptr_proj.__class__.__name__,
         obj_ptr_tpos_proj.__class__.__name__,
@@ -437,12 +437,10 @@ def build_model(args) -> Model:
         k for k in missing_keys if not any([key in k for key in ignore_keys])
     }
     if missing_keys:
-        logging.error("Missing keys: %r", missing_keys)
-        warnings.warn(f"Missing keys: {missing_keys}")
+        logger.error("Missing keys: %r", missing_keys)
 
     if unexpected_keys:
-        print(unexpected_keys)
-        logging.error(unexpected_keys)
+        logger.error(unexpected_keys)
         raise RuntimeError()
 
     return model

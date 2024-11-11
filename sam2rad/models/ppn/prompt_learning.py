@@ -1,4 +1,5 @@
 from typing import List, Type
+import math
 
 import numpy as np
 import torch
@@ -321,6 +322,22 @@ class HighResPPN(nn.Module):
         for param in self.prompt_encoder.parameters():
             param.requires_grad = False
 
+    @staticmethod
+    def interp(x, size, mode="bilinear"):
+        # x: (B, HW, C)
+        # size: (H'W')
+        bs, hw, c = x.shape
+        h = w = int(math.sqrt(hw))
+        x = x.permute(0, 2, 1).reshape(bs, c, h, w)
+        h_target = w_target = int(math.sqrt(size))
+        x = F.interpolate(
+            x,
+            size=(h_target, w_target),
+            mode=mode,
+            align_corners=None if mode == "nearest" else False,
+        )
+        return x.flatten(2).permute(0, 2, 1)
+
     def forward(
         self,
         image_features: List[torch.Tensor],
@@ -333,6 +350,14 @@ class HighResPPN(nn.Module):
             adapter(f) for f, adapter in zip(image_features, self.channel_adapters)
         ]
         query_pe = self.pos_encoding1d(queries)  # B x N_query_tokens x C
+        bs, c, h, w = image_features[0].shape
+        dense_embeddings = (
+            self.prompt_encoder.no_mask_embed.weight.reshape(1, -1, 1, 1)
+            .expand(bs, -1, h, w)
+            .flatten(2)
+            .permute(0, 2, 1)
+        )  # (B, H*W, c)
+
         for i, cross_attn_layer in enumerate(self.layers):
             # BxCxHxW -> BxHWxC == B x N_image_tokens x C
             # bs, c, h, w = image_embedding.shape
@@ -341,8 +366,12 @@ class HighResPPN(nn.Module):
             image_embed = image_embed.flatten(2).permute(
                 0, 2, 1
             )  # B x N_image_tokens x C
+            image_embed = image_embed + self.interp(
+                dense_embeddings,
+                image_embed.size(1),
+                mode="nearest",  # similar to Feature Pyramid Network (FPN)
+            )
             image_pe = image_pe.flatten(2).permute(0, 2, 1)  # B x N_image_tokens x C
-
             queries, dense_embeddings = cross_attn_layer(
                 queries=queries,
                 keys=image_embed,
@@ -488,5 +517,5 @@ class MobileSamHighResPPN(HighResPPN):
             attention_downsample_rate=attention_downsample_rate,
             depth=depth,
             channel_dims=channel_dims,
-            mask_scale_factor=4
+            mask_scale_factor=4,
         )

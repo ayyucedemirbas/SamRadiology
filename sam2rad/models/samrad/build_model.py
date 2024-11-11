@@ -13,6 +13,8 @@ from sam2rad.models.sam.modeling import PromptEncoder
 
 from .model import Model
 
+logger = logging.getLogger("sam2rad")
+
 
 def build_model(args):
     """
@@ -33,7 +35,7 @@ def build_model(args):
 
     try:
         image_encoder.load_checkpoint(args.sam_checkpoint)
-        logging.info(f"Loaded SAM image encoder from {args.sam_checkpoint}.")
+        logger.info(f"Loaded SAM image encoder from {args.sam_checkpoint}.")
     except AttributeError:
         # We only need to load pre-trained SAM checkpoint during training
         warnings.warn("No SAM checkpoint loaded. Loading without pre-trained weights.")
@@ -64,9 +66,9 @@ def build_model(args):
         }
         prompt_encoder.load_state_dict(state_dict)
 
-        logging.info(f"Loaded SAM prompt encoder from {args.sam_checkpoint}.")
+        logger.info(f"Loaded SAM prompt encoder from {args.sam_checkpoint}.")
     except AttributeError:
-        logging.info("No SAM checkpoint loaded. Loading without pre-trained weights.")
+        logger.info("No SAM checkpoint loaded. Loading without pre-trained weights.")
         warnings.warn("No SAM checkpoint loaded. Loading without pre-trained weights.")
 
     prompt_sampler = PromptSampler(

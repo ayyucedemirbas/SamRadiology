@@ -20,8 +20,8 @@ wandb_project_name: "acdc"
 dataset:
   name: acdc
   root: /home/wahd/datasets/ACDC/ACDCPreprocessed
-  image_size: 256
-  split: 0.0526 # 0.0263 # training split
+  image_size: 1024
+  split: 0.0526 # training split
   seed: 42
   batch_size: 4
   num_workers: 4
@@ -31,9 +31,10 @@ dataset:
 training:
   max_epochs: 200
   save_path: checkpoints/ACDC
+  resume: checkpoints/last.ckpt
 
 
 inference:
   name: acdc_test
   root: /home/wahd/datasets/ACDC/ACDCPreprocessed
-  checkpoint_path: "" 
+  checkpoint_path: checkpoints/last.ckpt
