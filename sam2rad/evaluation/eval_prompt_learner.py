@@ -55,9 +55,9 @@ class SegmentationModel(torch.nn.Module):
         self.dataset_names = list(prompts.keys())
         self.num_classes = list(prompts.values())[0].shape[0]
         self.learnable_prompts = torch.nn.ParameterDict(prompts)
-        self.model.prompt_sampler.p[0] = 0
+        self.model.prompt_sampler.p[0] = 1.0 # Learnable prompts
         self.model.prompt_sampler.p[1] = 0
-        self.model.prompt_sampler.p[2] = 1.0  # Ground truth box prompts
+        self.model.prompt_sampler.p[2] = 0.0  # Ground truth box prompts
         self.model.prompt_sampler.p[3] = 0
 
     def forward(self, batch, dataset_index):
@@ -142,13 +142,11 @@ class Eval:
             plt.subplot(1, 2, 1)
 
             plt.imshow(img_orig[0])
-            gt_color = colorize_mask(gt[0].cpu().numpy(), num_classes=num_classes)
-            plt.imshow(gt_color, alpha=0.5)
+            plt.imshow(gt[0].cpu(), alpha=0.5)
             plt.subplot(1, 2, 2)
             plt.imshow(img_orig[0])
-            pred_color = colorize_mask(pred[0].cpu().numpy(), num_classes=num_classes)
-            plt.imshow(pred_color, alpha=0.5)
-            plt.savefig("eval_box_debug.png")
+            plt.imshow(pred[0].cpu(), alpha=0.5)
+            plt.savefig("eval_prompt_learner_debug.png")
             plt.close()
             import pdb
 

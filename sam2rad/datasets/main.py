@@ -359,10 +359,16 @@ class TestDataset(BaseDataset):
         img_orig = self.read_image(self.img_files[index])
         img = img_orig.float() / 255.0
         gt = self.read_mask(self.gt_files[index])
-        gt = self.remap_labels(gt).long()
+        gt = self.remap_labels(gt).long().squeeze(0)
+        gt = F.one_hot(gt, num_classes=self.num_classes + 1).permute(
+            2, 0, 1
+        )  # (C+1, H, W)
+        # remove background class
+        gt = gt[1:]  # (C, H, W)
+
         img = (img - self.mean) / self.std
         img = self.resize(img[None], order=1)
-        input_size = img.shape[2:]
+        input_size = img.shape[-2:]
         img = self.pad(img)[0]
         boxes = self.masks_to_boxes(gt)
 

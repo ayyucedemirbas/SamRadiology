@@ -138,8 +138,8 @@ inference:
 ```
 Run the evaluation script:
 ```bash
-python sam2rad/evaluation/eval_bounding_box.py --config /path/to/your/config.yaml
-python sam2rad/evaluation/eval_prompt_learner.py --config /path/to/your/config.yaml
+python -m sam2rad.evaluation.eval_bounding_box --config /path/to/your/config.yaml
+python -m sam2rad.evaluation.eval_prompt_learner --config /path/to/your/config.yaml
 ```
 
 ## Citation

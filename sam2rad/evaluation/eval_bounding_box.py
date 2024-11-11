@@ -17,7 +17,6 @@ from sam2rad import (
     DotDict,
     build_sam2rad,
     build_samrad,
-    colorize_mask,
     convert_to_semantic,
 )
 
@@ -136,18 +135,18 @@ class Eval:
         )
         pred = convert_to_semantic(pred)
         gt = convert_to_semantic(gt)
+        print("pred shape", pred.shape)
+        print("gt shape", gt.shape)
 
         if DEBUG:
             boxes = boxes.cpu()
             plt.subplot(1, 2, 1)
 
             plt.imshow(img_orig[0])
-            gt_color = colorize_mask(gt[0].cpu().numpy(), num_classes=num_classes)
-            plt.imshow(gt_color, alpha=0.5)
+            plt.imshow(gt[0].cpu(), alpha=0.5)
             plt.subplot(1, 2, 2)
             plt.imshow(img_orig[0])
-            pred_color = colorize_mask(pred[0].cpu().numpy(), num_classes=num_classes)
-            plt.imshow(pred_color, alpha=0.5)
+            plt.imshow(pred[0].cpu(), alpha=0.5)
             plt.savefig("eval_box_debug.png")
             plt.close()
             import pdb
