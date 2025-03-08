@@ -25,7 +25,13 @@ pip install -r requirements.txt
 
 
 4.	Download Pre-trained Weights
-Download the pre-trained weights from the official SAM repository and place them in the weights directory:
+
+Download the pre-trained weights from the following links:
+
+- [Pre-trained weights for SAM2-Hiera-Tiny](https://huggingface.co/facebook/sam2-hiera-tiny/blob/f245b47be73d8858fb7543a8b9c1c720d9f98779/sam2_hiera_tiny.pt)
+- [Trained model](https://huggingface.co/ayyuce/sam2rad)
+  
+Place the downloaded weights in the `weights` directory.
 
 
 ## Quickstart
