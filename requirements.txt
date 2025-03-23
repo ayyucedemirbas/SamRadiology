@@ -11,3 +11,4 @@ scikit-learn
 termcolor
 pytorch_lightning
 hydra-core
+torchmetrics==1.6.3
